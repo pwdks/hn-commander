@@ -1,5 +1,5 @@
 # hn-commander installer (Windows 10/11, Windows PowerShell 5.1 or PowerShell 7)
-#   install:   irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1 | iex
+#   install:   iex (irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1)
 #   uninstall: & ([scriptblock]::Create((irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1))) -Uninstall
 param([switch]$Uninstall)
 

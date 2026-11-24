@@ -34,7 +34,7 @@
 
 ### Windows 11 (PowerShell)
 ```powershell
-irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1 | iex
+iex (irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1)
 ```
 
 ### macOS (Apple Silicon 포함, 터미널)
