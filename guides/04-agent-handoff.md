@@ -36,6 +36,8 @@
 | 수정 | developer, tester, documenter | `-s workspace-write` | + 파일 수정 |
 | 수정+실행 | debugger, integrator, optimizer | `-s workspace-write` | + 명령 실행 |
 
+- 읽기 전용·수정 역할은 넘겨받았을 때 빌드·테스트를 실행하지 않고 "돌릴 명령"만 적는다. 실행은 진행 중인 에이전트가 결과를 받은 뒤 한 번 한다 (샌드박스에 막혀 시간·토큰을 버리지 않도록)
+- Codex 샌드박스는 Windows에서 빌드 도구(dotnet 파이프 등)나 셸 실행을 막을 수 있다. 수정+실행 역할을 Codex에 맡기고 빌드까지 시키려면 `hn.sh codex-sandbox full` (`-s danger-full-access`, 되돌리기는 `auto`). 이때 Codex 쪽은 커밋·푸시·삭제를 지시문으로만 막는다
 - 넘겨받은 쪽은 커밋·푸시·재위임을 하지 않는다 (`HN_DELEGATED=1`로 막음)
 - 결과는 `.harness/state/results/`에 남는다
 
@@ -55,5 +57,6 @@
 | `fix-round` | 검토 지적 → 고치기 + 재검토 |
 | `wait` / `cancel` / `finish` / `status` | 대기 / 취소 / 끝내기 / 상태 |
 | `roles` / `role-set` / `preset` / `on` / `off` | 배정 보기·바꾸기 |
+| `codex-sandbox <auto\|full>` | 위임받은 Codex의 샌드박스 (기본 auto) |
 
 Windows PowerShell·cmd에서는 `bash .harness/bin/hn.sh` 대신 `.harness\bin\hn.cmd`.

@@ -178,6 +178,7 @@ sequenceDiagram
 - **진행은 대화 중인 에이전트가** 합니다. Codex에게 말하면 Codex가 진행하고 Claude를 부릅니다.
 - 넘길 때는 대화 전체가 아니라 **역할 지침 · 목표 · 앞 단계 결과**만 넘깁니다.
 - 넘겨받은 쪽은 역할 권한 안에서만 일하고 **커밋·푸시·재위임을 하지 않습니다.**
+- 실행 권한이 없는 역할(tester 등)은 넘겨받으면 테스트를 **쓰기만 하고 돌리지 않습니다.** 돌릴 명령을 적어 돌려주면 진행 중인 에이전트가 한 번 실행해 확인합니다.
 - 검토 지적 → 고치기 → 재검토는 **1회까지**. 그래도 남은 문제는 보고만 합니다.
 - 응답을 끝내려는데 남은 단계가 있으면 **Stop 훅**이 한 번 이어서 진행시킵니다.
 
@@ -212,6 +213,7 @@ my-project/
 bash .harness/bin/hn.sh roles     # 지금 역할 배정
 bash .harness/bin/hn.sh status    # 진행 중인 작업과 단계 기록
 bash .harness/bin/hn.sh off       # 하네스 잠시 끄기 (on 으로 다시 켬)
+bash .harness/bin/hn.sh codex-sandbox full   # 위임받은 Codex 샌드박스 풀기 (auto 로 되돌림)
 ```
 Windows PowerShell에서는 `.harness\bin\hn.cmd roles` 처럼 씁니다.
 
@@ -229,6 +231,17 @@ Windows PowerShell에서는 `.harness\bin\hn.cmd roles` 처럼 씁니다.
 <summary><b>Codex 훅이 동작하지 않아요</b></summary>
 
 Codex는 프로젝트 훅을 처음 한 번 신뢰(trust)해야 실행합니다. 위의 [🔐 Codex 훅 신뢰하기](#-codex-훅-신뢰하기-프로젝트마다-한-번)를 따라 주세요.
+</details>
+
+<details>
+<summary><b>Codex에 넘긴 단계가 빌드·테스트를 못 돌려요 (sandbox blocked)</b></summary>
+
+넘겨받은 Codex는 샌드박스 안에서 실행됩니다. Windows에서는 이 샌드박스가 빌드 도구(예: Unreal `Build.bat`의 dotnet)나 셸 실행 자체를 `액세스가 거부되었습니다`로 막을 수 있습니다.
+
+- **tester · reviewer 등 실행 권한이 없는 역할**은 원래 실행하지 않습니다. 테스트를 쓰고 돌릴 명령을 적어 주면, 진행 중인 에이전트가 직접 실행합니다. 따로 할 일은 없습니다.
+- **debugger · integrator · optimizer를 Codex에 맡겼고 빌드까지 시키고 싶다면** 샌드박스를 풀 수 있습니다: `/hn-mod-role` → "위임받은 Codex 샌드박스 풀기", 또는 `bash .harness/bin/hn.sh codex-sandbox full` (되돌리기: `auto`). 이때 Codex 쪽의 커밋·푸시·삭제는 지시문으로만 막습니다.
+
+이미 세팅한 프로젝트는 업데이트 후 `/hn-setup`을 다시 실행해야 새 스크립트가 들어갑니다.
 </details>
 
 <details>
