@@ -49,12 +49,33 @@ curl -fsSL https://raw.githubusercontent.com/pwdks/hn-commander/main/install.sh 
 | 처음 세팅 | `/hn-setup` | `$hn-setup` |
 | 역할 배정 바꾸기 | `/hn-mod-role` | `$hn-mod-role` |
 
+### 🔄 업데이트 (두 단계)
+
+업데이트는 **내 컴퓨터**와 **이미 세팅한 프로젝트**를 따로 바꿔야 합니다. 1단계만 하면 프로젝트 안의 스크립트는 예전 버전 그대로입니다.
+
+**1. 내 컴퓨터 (한 번)**: 위의 설치 명령을 다시 실행합니다. `~/.hn-commander/`가 최신 버전으로 바뀌고 `hn-commander 0.x.x installed`처럼 버전이 표시됩니다.
+
+**2. 이미 세팅한 프로젝트마다**: 그 프로젝트 폴더에서 아래 명령을 실행합니다. 프로젝트의 `.harness/bin/` 스크립트만 최신으로 바꿉니다.
+```powershell
+# Windows (PowerShell)
+& "$env:USERPROFILE\.hn-commander\harness\bin\hn.cmd" init
+```
+```bash
+# macOS
+bash ~/.hn-commander/harness/bin/hn.sh init
+```
+
+| 업데이트로 바뀌는 것 | 그대로 두는 것 (직접 고친 내용 보존) |
+|---|---|
+| `.harness/bin/` 스크립트 | 역할 배정 `roles.conf`, 단계 `pipelines.conf`, 역할 지침 `docs/roles/`, `CLAUDE.md`·`AGENTS.md`, 훅 설정 |
+
+- 역할 지침까지 새 버전으로 받고 싶으면 `docs/roles/`의 그 파일을 지운 뒤 2단계를 다시 실행하세요.
+- 훅 설정은 바뀌지 않으므로 Codex 훅을 다시 신뢰할 필요는 없습니다.
+- `/hn-setup`을 다시 실행해도 스크립트가 바뀌지만, 역할 배정 질문부터 다시 답해야 합니다. 스크립트만 바꿀 때는 위 명령이 간단합니다.
+
 <details>
-<summary>🔄 업데이트 · 🗑️ 삭제</summary>
+<summary>🗑️ 삭제</summary>
 
-**업데이트**: 설치 명령을 다시 실행하면 최신 버전으로 바뀝니다. 이미 세팅한 프로젝트에 새 스크립트를 넣으려면 그 프로젝트에서 `/hn-setup`을 다시 실행하세요(기존 파일은 덮어쓰지 않음).
-
-**삭제**
 ```powershell
 # Windows
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/pwdks/hn-commander/main/install.ps1))) -Uninstall
@@ -84,7 +105,7 @@ Codex는 프로젝트에 들어 있는 훅을 **사람이 한 번 확인하고 �
 
 > ⚠️ 이 화면에서 **Space / Enter** 를 누르면 훅이 꺼집니다(`[x]` → `[ ]`). 실수로 눌렀다면 한 번 더 눌러 `[x]` 로 돌려 두세요.
 
-- 훅 내용이 바뀌면(예: 업데이트 후 `/hn-setup` 다시 실행) 한 번 더 신뢰해야 합니다.
+- `.codex/hooks.json`의 훅 내용이 바뀌면 한 번 더 신뢰해야 합니다. 업데이트는 이 파일을 건드리지 않으니 보통은 다시 할 일이 없습니다.
 - **신뢰하지 않아도** 단계 진행과 넘기기는 그대로 동작합니다. Codex가 진행을 맡을 때 "남은 단계 재촉"만 빠집니다.
 - Claude Code의 훅은 이 과정이 필요 없습니다.
 
@@ -241,7 +262,7 @@ Codex는 프로젝트 훅을 처음 한 번 신뢰(trust)해야 실행합니다.
 - **tester · reviewer 등 실행 권한이 없는 역할**은 원래 실행하지 않습니다. 테스트를 쓰고 돌릴 명령을 적어 주면, 진행 중인 에이전트가 직접 실행합니다. 따로 할 일은 없습니다.
 - **debugger · integrator · optimizer를 Codex에 맡겼고 빌드까지 시키고 싶다면** 샌드박스를 풀 수 있습니다: `/hn-mod-role` → "위임받은 Codex 샌드박스 풀기", 또는 `bash .harness/bin/hn.sh codex-sandbox full` (되돌리기: `auto`). 이때 Codex 쪽의 커밋·푸시·삭제는 지시문으로만 막습니다.
 
-이미 세팅한 프로젝트는 업데이트 후 `/hn-setup`을 다시 실행해야 새 스크립트가 들어갑니다.
+이 동작은 0.1.1부터입니다. 이미 세팅한 프로젝트는 [🔄 업데이트](#-업데이트-두-단계)의 1·2단계를 모두 해야 적용됩니다.
 </details>
 
 <details>
