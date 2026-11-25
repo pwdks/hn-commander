@@ -10,7 +10,8 @@
 #   next                        다음 단계와 담당
 #   done <역할> "<한 줄 결과>"   단계 완료
 #   skip <역할> "<이유>"         단계 건너뜀
-#   delegate <역할> "<목표>"     다른 에이전트에게 맡기고 결과를 받음
+#   delegate <역할> "<목표>"     다른 에이전트에게 맡기고 결과를 받음 (그쪽이 한도에 걸리면 대신 하라고 알림)
+#   limits [clear [claude|codex]]  넘겨받는 에이전트의 한도 기록 보기 / 지우기
 #   fix-round                   검토 지적 → 고치기 + 다시 검토 (1회까지)
 #   wait                        사용자에게 묻기 전에 (훅이 재촉하지 않음)
 #   cancel | finish | status
@@ -35,6 +36,8 @@ PIPES_FILE="$H/pipelines.conf"
 STATE="$H/state"
 CUR="$STATE/current.conf"
 LOG="$STATE/log.md"
+LIMITS="$STATE/limits.conf"   # 넘겨받은 에이전트가 한도에 걸린 기록: <에이전트>=<다시 넘겨 볼 시각(epoch)>
+LIMIT_DEFAULT_MIN=15          # 풀리는 시각을 못 읽었을 때 다시 넘겨 볼 때까지 기다리는 분
 
 die() { echo "hn: $*" >&2; exit 1; }
 
@@ -177,6 +180,7 @@ cmd_next() {
     echo "  지침: $(role_file "$s")"
     echo "  내가 $a 이면 직접 하고 'hn.sh done $s \"<한 줄 결과>\"'"
     echo "  아니면 'hn.sh delegate $s \"<이번 목표>\"' (오래 걸림: 타임아웃 10분 이상)"
+    [ "$(limit_left "$a")" -gt 0 ] && echo "  ($a 한도 중: $(hm_of "$(kv_get "$LIMITS" "$a")") 전에는 delegate가 넘기지 않고 대신 하라고 알려 줌)"
   fi
 }
 
@@ -187,7 +191,9 @@ advance() { # $1 역할, $2 상태, $3 메모
   [ -n "$s" ] || die "남은 단계가 없습니다. finish 하세요"
   [ "$s" = "$1" ] || die "지금 단계는 '$s'입니다 ('$1' 아님)"
   kv_set "$CUR" pos $((p+1))
-  log "$1($(agent_of "$1")) $2: ${3:-}"
+  who="$(agent_of "$1")"
+  [ "$(kv_get "$CUR" proxy)" = "$1" ] && { who="$who 한도 → 대신"; kv_set "$CUR" proxy ""; }
+  log "$1($who) $2: ${3:-}"
   cmd_next
 }
 cmd_done() { [ $# -ge 1 ] || die "사용: done <역할> \"<한 줄 결과>\""; advance "$1" 완료 "${2:-}"; }
@@ -226,6 +232,7 @@ cmd_status() {
   [ -f "$CUR" ] || { echo "진행 중인 작업 없음"; return 0; }
   echo "작업: [$(kv_get "$CUR" type)] $(kv_get "$CUR" request)"
   echo "남은 단계: $(remaining)"; [ "$(kv_get "$CUR" wait)" = 1 ] && echo "(사용자 답 대기 중)"
+  for a in claude codex; do [ "$(limit_left "$a")" -gt 0 ] && echo "($a 한도 중: $(hm_of "$(kv_get "$LIMITS" "$a")") 전까지는 대신 진행)"; done
   [ -f "$LOG" ] && cat "$LOG"
 }
 cmd_finish() {
@@ -237,6 +244,75 @@ cmd_finish() {
 }
 
 # ---------- 넘기기 ----------
+# 한도(사용량·요청 수) 초과로 보이는 문구. 작업 내용과 헷갈리지 않게 찾는 곳을 좁힌다
+#   실행 실패·결과 없음: 로그 끝부분 + 결과에서 LIMIT_RE
+#   정상 종료인데 결과가 짧음: 결과에서만, 한도 안내 문구로만 쓰이는 LIMIT_RE_OK ("rate limit" 같은 말은 코드 이야기일 수 있음)
+LIMIT_RE='usage limit|rate[ _-]?limit|limit reached|hit your( usage)? limit|out of (credits|quota)|quota exceeded|exceeded your (current )?quota|insufficient_quota|too many requests|(^|[^0-9])429([^0-9]|$)'
+LIMIT_RE_OK='usage limit reached|hit your( usage)? limit|[0-9]+-hour limit|weekly limit reached|limit reached.{0,10}(\||resets?)'
+
+hm_of() { date -d "@$1" '+%m/%d %H:%M' 2>/dev/null || date -r "$1" '+%m/%d %H:%M'; }
+
+limit_left() {  # <에이전트> → 다시 넘겨 볼 때까지 남은 초 (없으면 0)
+  u="$(kv_get "$LIMITS" "$1")"; case "$u" in ''|*[!0-9]*) echo 0; return ;; esac
+  l=$((u - $(date +%s))); [ "$l" -gt 0 ] && echo "$l" || echo 0
+}
+
+limit_until() {  # <메시지 파일> → "<풀리는 시각 epoch> <0: 메시지에서 읽음 | 1: 못 읽어 기본값>"
+  txt="$(tail -n 40 "$1" 2>/dev/null | tr 'A-Z' 'a-z' | tr '\r\n' '  ')"
+  set -- $(date '+%s %H %M %S'); now="$1"; nh=$((10#$2)); nm=$((10#$3)); ns=$((10#$4))   # 한 번에 읽어 어긋나지 않게
+  # 1) "limit reached|1732550400" 처럼 시각(epoch)이 그대로 적힌 경우
+  e="$(printf '%s' "$txt" | grep -oE '\|[0-9]{10}' | head -1 | tr -d '|')"
+  [ -n "$e" ] && [ "$e" -gt "$now" ] && { echo "$e 0"; return; }
+  # 2) "try again in 2 hours 15 minutes" / "resets in 3h"
+  rel="$(printf '%s' "$txt" | grep -oE '(again|resets?) in [0-9a-z ,]+' | head -1)"
+  if [ -n "$rel" ]; then
+    s="$(printf '%s' "$rel" | awk '{ n = split($0, t, /[ ,]+/); s = 0
+      for (i = 1; i <= n; i++) { v = t[i]; u = ""
+        if (v ~ /^[0-9]+$/) u = t[i + 1]
+        else if (v ~ /^[0-9]+[a-z]+$/) { u = v; sub(/^[0-9]+/, "", u); sub(/[a-z]+$/, "", v) }
+        else continue
+        if (u ~ /^d/) s += v * 86400; else if (u ~ /^h/) s += v * 3600; else if (u ~ /^m/) s += v * 60; else if (u ~ /^s/) s += v }
+      print s }')"
+    [ "${s:-0}" -gt 0 ] && { echo "$((now + s)) 0"; return; }
+  fi
+  # 3) "resets 3pm" / "try again at 3:05 PM" / "resets at 15:00" (이 컴퓨터 시간대로 본다)
+  at="$(printf '%s' "$txt" | grep -oE '(resets?( at)?|again at) [0-9]{1,2}(:[0-9]{2})? ?(am|pm)?' | head -1)"
+  if [ -n "$at" ]; then
+    hh="$(printf '%s' "$at" | sed -E 's/^[a-z ]* ([0-9]{1,2}).*/\1/')"
+    mm="$(printf '%s' "$at" | sed -nE 's/.*:([0-9]{2}).*/\1/p')"
+    ap="$(printf '%s' "$at" | grep -oE '(am|pm)$')"
+    if [ -n "$mm$ap" ] && [ "$((10#$hh))" -le 23 ]; then
+      h=$((10#$hh)); m=$((10#${mm:-0}))
+      [ "$ap" = pm ] && [ "$h" -lt 12 ] && h=$((h + 12)); [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
+      d=$(( (h * 60 + m - nh * 60 - nm + 1440) % 1440 )); [ "$d" -eq 0 ] && d=1
+      echo "$((now - ns + d * 60)) 0"; return
+    fi
+  fi
+  echo "$((now + LIMIT_DEFAULT_MIN * 60)) 1"
+}
+
+# 넘기지 않고 진행 중인 에이전트가 이번 단계만 대신 한다 (역할 배정·지침은 그대로)
+fallback_msg() {  # <역할> <에이전트> <역할 파일> <사유>
+  [ -f "$CUR" ] && kv_set "$CUR" proxy "$1"
+  echo "[$1] $2 $4"
+  echo "→ 넘기지 말고 내가(진행 중인 에이전트) 이 단계를 대신 한다. 사용자에게 묻지 않아도 된다"
+  echo "  지침: $3 (역할 배정·지침은 바뀌지 않음. 이번 단계만 대신)"
+  echo "  끝나면 'hn.sh done $1 \"<한 줄 결과>\"'. $2 한도가 풀린 뒤의 단계는 다시 $2 에게 넘긴다"
+}
+
+cmd_limits() {
+  if [ "${1:-}" = clear ]; then
+    for a in ${2:-claude codex}; do [ -f "$LIMITS" ] && kv_set "$LIMITS" "$a" ""; done
+    echo "한도 기록 지움: ${2:-claude codex} (다음 단계부터 다시 넘김)"; return 0
+  fi
+  [ -n "${1:-}" ] && die "사용: limits [clear [claude|codex]]"
+  any=""
+  for a in claude codex; do
+    [ "$(limit_left "$a")" -gt 0 ] || continue
+    echo "$a: 한도 중. $(hm_of "$(kv_get "$LIMITS" "$a")")부터 다시 넘겨 봄 (그 전까지는 진행 중인 에이전트가 대신)"; any=1
+  done
+  [ -n "$any" ] || echo "한도 걸린 에이전트 없음"
+}
 cmd_delegate() {
   [ -z "${HN_DELEGATED:-}" ] || die "위임받은 작업 안에서는 다시 넘길 수 없습니다(재위임 금지). 맡은 역할만 하세요"
   [ $# -ge 2 ] || die "사용: delegate <역할> \"<이번 목표>\""
@@ -245,6 +321,10 @@ cmd_delegate() {
   agent="$(agent_of "$role")"; [ "$agent" != none ] || die "$role 은 배정 안 됨 → skip 하세요"
   rf="$(role_file "$role")"; [ -n "$rf" ] || die "역할 파일 없음: docs/roles/*-$role.md"
   perm="$(perm_of "$role")"
+  if [ "$(limit_left "$agent")" -gt 0 ]; then
+    fallback_msg "$role" "$agent" "$rf" "한도 중 ($(hm_of "$(kv_get "$LIMITS" "$agent")")부터 다시 넘겨 봄. 지금은 넘기지 않음)"
+    return 0
+  fi
   mkdir -p "$STATE/results"
   n=$(ls "$STATE"/results/*.md 2>/dev/null | wc -l | tr -d ' '); n=$((n+1))
   out="$STATE/results/$(printf '%02d' "$n")-$role-$agent.md"; errlog="$STATE/results/.last-$agent.log"
@@ -295,6 +375,25 @@ cmd_delegate() {
     *) die "알 수 없는 담당: $agent" ;;
   esac
 
+  # 한도 초과인지 본다 (위 LIMIT_RE 설명 참고)
+  chk="$STATE/results/.last-check.txt"; osz=0
+  [ -f "$out" ] && osz="$(wc -c < "$out" | tr -d ' ')"
+  if [ "$rc" -ne 0 ] || [ "$osz" -eq 0 ]; then
+    { tail -n 40 "$errlog" 2>/dev/null; [ -f "$out" ] && cat "$out"; } > "$chk"; re="$LIMIT_RE"
+  elif [ "$osz" -lt 600 ]; then cp "$out" "$chk"; re="$LIMIT_RE_OK"
+  else : > "$chk"; re='$^'
+  fi
+  if grep -qiE "$re" "$chk"; then
+    set -- $(limit_until "$chk"); reset_at="$1"; guessed="$2"
+    kv_set "$LIMITS" "$agent" "$reset_at"
+    cat "$out" >> "$errlog" 2>/dev/null; rm -f "$out"   # 한도 메시지를 다음 단계의 '앞 결과'로 넘기지 않게
+    if [ "$guessed" = 1 ]; then why="한도 초과 (풀리는 시각을 못 읽어 ${LIMIT_DEFAULT_MIN}분 뒤 $(hm_of "$reset_at")부터 다시 넘겨 봄)"
+    else why="한도 초과 ($(hm_of "$reset_at")에 풀릴 예정)"; fi
+    log "$role($agent) 한도 초과 → 진행 중인 에이전트가 대신 (다시 넘겨 볼 시각: $(hm_of "$reset_at"))"
+    fallback_msg "$role" "$agent" "$rf" "$why. 로그: ${errlog#$ROOT/}"
+    echo "  먼저 git status / git diff 로 $agent 가 하다 만 변경이 있는지 보고, 있으면 그걸 이어서 한다"
+    return 0
+  fi
   if [ "$rc" -ne 0 ] || [ ! -s "$out" ]; then
     echo "[$role] $agent 실행 실패(종료 코드 $rc). 로그: ${errlog#$ROOT/}"; tail -n 15 "$errlog" 2>/dev/null
     echo "→ 사용자에게 알리고, 'hn.sh skip $role \"실행 실패\"' 또는 다시 시도"
@@ -493,6 +592,7 @@ case "$cmd" in
   done) cmd_done "$@" ;;
   skip) cmd_skip "$@" ;;
   delegate) cmd_delegate "$@" ;;
+  limits) cmd_limits "$@" ;;
   fix-round) cmd_fix_round ;;
   wait) cmd_wait ;;
   cancel) cmd_cancel ;;
@@ -505,5 +605,5 @@ case "$cmd" in
   lang) cmd_lang "$@" ;;
   hooks) cmd_hooks ;;
   section) cmd_section "$@" ;;
-  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; [ -n "$cmd" ] && exit 1 ;;
+  *) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; [ -n "$cmd" ] && exit 1 ;;
 esac
