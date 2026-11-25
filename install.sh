@@ -15,6 +15,10 @@ say() { printf '%s\n' "$*"; }
 if [ "${1:-}" = "--uninstall" ]; then
   for d in $SKILL_DIRS; do for s in $SKILLS; do rm -rf "$d/$s"; done; done
   rm -rf "$HN_HOME"
+  x="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"   # remove only the language block that hn-commander added
+  if [ -f "$x" ] && grep -q '<!-- hn-commander:lang -->' "$x"; then
+    awk '/<!-- hn-commander:lang -->/ { skip = 1; next } /<!-- hn-commander:lang-end -->/ { skip = 0; next } !skip { print }' "$x" > "$x.tmp" && mv "$x.tmp" "$x"
+  fi
   say "hn-commander removed. (Project files such as .harness/ were not touched.)"
   exit 0
 fi

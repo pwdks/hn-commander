@@ -13,6 +13,13 @@ $SkillDirs = @((Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:US
 if ($Uninstall) {
   foreach ($d in $SkillDirs) { foreach ($s in $Skills) { $p = Join-Path $d $s; if (Test-Path $p) { Remove-Item $p -Recurse -Force } } }
   if (Test-Path $HnHome) { Remove-Item $HnHome -Recurse -Force }
+  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+  $codexAgents = Join-Path $codexHome 'AGENTS.md'
+  if (Test-Path $codexAgents) {  # remove only the language block that hn-commander added
+    $t = [IO.File]::ReadAllText($codexAgents)
+    $t2 = [regex]::Replace($t, '(\r?\n)*<!-- hn-commander:lang -->[\s\S]*?<!-- hn-commander:lang-end -->\r?\n?', [Environment]::NewLine)
+    if ($t2 -ne $t) { [IO.File]::WriteAllText($codexAgents, $t2.TrimStart()) }
+  }
   Write-Host 'hn-commander removed. (Project files such as .harness\ were not touched.)'
   return
 }

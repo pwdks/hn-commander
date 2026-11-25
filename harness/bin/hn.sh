@@ -17,6 +17,7 @@
 #   stop-hook                   Claude/Codex Stop 훅에서 호출
 #   update                      이 프로젝트를 설치된 최신 버전으로 (= init)
 #   update-all                  등록된 모든 프로젝트를 최신으로 (설치 스크립트가 호출)
+#   lang-detect | lang <ko|en|…>  답변 언어 감지 / 설정 (Claude·Codex 사용자 전체 설정)
 #   init | hooks | section <claude|codex>   /hn-setup에서 사용
 set -u
 
@@ -417,6 +418,53 @@ cmd_hooks() {
   echo "Codex 훅은 처음 한 번 Codex에서 /hooks 로 신뢰(trust)해야 동작합니다."
 }
 
+# ---------- 답변 언어 (사용자 전체 설정: 모든 프로젝트에 적용) ----------
+#   Claude Code: ~/.claude/settings.json 의 "language"
+#   Codex      : ~/.codex/AGENTS.md 의 hn-commander:lang 구역 (Codex에는 언어 설정이 없음)
+lang_info() {  # <코드> → "<코드> <Claude 값> <영어 이름> <한국어 이름>"
+  case "$1" in
+    ko) echo "ko korean Korean 한국어" ;;      ja) echo "ja japanese Japanese 일본어" ;;
+    zh) echo "zh chinese Chinese 중국어" ;;     es) echo "es spanish Spanish 스페인어" ;;
+    fr) echo "fr french French 프랑스어" ;;     de) echo "de german German 독일어" ;;
+    pt) echo "pt portuguese Portuguese 포르투갈어" ;;
+    *)  echo "en english English 영어" ;;
+  esac
+}
+
+cmd_lang_detect() {  # 컴퓨터의 표시 언어 (위치가 아니라 OS 언어 설정 기준)
+  l=""
+  if command -v powershell.exe >/dev/null 2>&1; then l="$(powershell.exe -NoProfile -Command '(Get-UICulture).Name' 2>/dev/null | tr -d '\r')"
+  elif command -v defaults >/dev/null 2>&1; then l="$(defaults read -g AppleLanguages 2>/dev/null | sed -n 's/^[[:space:]]*"\{0,1\}\([A-Za-z-]*\).*/\1/p' | grep . | head -1)"
+  fi
+  [ -n "$l" ] || l="${LC_ALL:-${LANG:-en}}"
+  lang_info "$(printf '%s' "$l" | cut -c1-2 | tr 'A-Z' 'a-z')"
+}
+
+cmd_lang() {
+  case "${1:-}" in ko|en|ja|zh|es|fr|de|pt) ;; *) die "사용: lang <ko|en|ja|zh|es|fr|de|pt>" ;; esac
+  set -- $(lang_info "$1")
+  val="$2"; eng="$3"; kor="$4"
+  # Claude Code: "language" 한 줄만 넣거나 바꾼다 (다른 설정은 그대로)
+  c="$HOME/.claude/settings.json"; t="$c.tmp.$$"; mkdir -p "$HOME/.claude"
+  if [ ! -s "$c" ] || [ "$(tr -d ' \t\r\n' < "$c")" = "{}" ]; then printf '{\n  "language": "%s"\n}\n' "$val" > "$c"
+  elif grep -q '"language"[[:space:]]*:' "$c"; then
+    sed "s/\"language\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"language\": \"$val\"/" "$c" > "$t" && mv "$t" "$c"
+  else
+    awk -v v="$val" '!d && /\{/ { sub(/\{/, "{\n  \"language\": \"" v "\","); d = 1 } { print }' "$c" > "$t" && mv "$t" "$c"
+  fi
+  echo "Claude Code: ~/.claude/settings.json → \"language\": \"$val\""
+  # Codex: 전역 지침 파일에 표시된 구역만 바꾼다
+  x="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"; mkdir -p "$(dirname "$x")"; touch "$x"
+  awk '/<!-- hn-commander:lang -->/ { skip = 1; next } /<!-- hn-commander:lang-end -->/ { skip = 0; next } !skip { print }' "$x" > "$x.tmp.$$"
+  { cat "$x.tmp.$$"; [ -s "$x.tmp.$$" ] && echo
+    echo "<!-- hn-commander:lang -->"
+    echo "Always write replies and reports to the user in $eng."
+    echo "<!-- hn-commander:lang-end -->"; } | awk 'NF || prev_nf { print } { prev_nf = NF }' > "$x"
+  rm -f "$x.tmp.$$"
+  echo "Codex      : ${x/#$HOME/~} → $eng"
+  echo "답변 언어: $kor (모든 프로젝트에 적용. Claude Code / Codex를 다시 켜면 반영)"
+}
+
 cmd_section() {
   me="${1:-}"; case "$me" in claude|codex) ;; *) die "사용: section <claude|codex>" ;; esac
   sed "s/{{ME}}/$me/g" "$HN_HOME/harness/agent-section.md"
@@ -443,7 +491,9 @@ case "$cmd" in
   stop-hook) cmd_stop_hook ;;
   init|update) cmd_init ;;
   update-all) cmd_update_all ;;
+  lang-detect) cmd_lang_detect ;;
+  lang) cmd_lang "$@" ;;
   hooks) cmd_hooks ;;
   section) cmd_section "$@" ;;
-  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; [ -n "$cmd" ] && exit 1 ;;
+  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; [ -n "$cmd" ] && exit 1 ;;
 esac
