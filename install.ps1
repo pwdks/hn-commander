@@ -29,9 +29,12 @@ try {
   $src = Get-ChildItem $tmp -Directory | Select-Object -First 1
   if (-not $src -or -not (Test-Path (Join-Path $src.FullName 'harness\bin\hn.sh'))) { throw 'unexpected archive layout' }
 
+  $registry = Join-Path $HnHome 'projects.txt'   # projects set up with hn-commander (kept across updates)
+  $projects = if (Test-Path $registry) { [IO.File]::ReadAllText($registry) } else { $null }
   if (Test-Path $HnHome) { Remove-Item $HnHome -Recurse -Force }
   New-Item -ItemType Directory (Split-Path $HnHome -Parent) -Force | Out-Null
   Move-Item $src.FullName $HnHome
+  if ($projects) { [IO.File]::WriteAllText($registry, $projects) }
 
   foreach ($d in $SkillDirs) {
     foreach ($s in $Skills) {
@@ -56,4 +59,9 @@ foreach ($c in @('claude', 'codex')) {
   if (Get-Command $c -ErrorAction SilentlyContinue) { Write-Host "  [ok]      $c" } else { Write-Host "  [missing] $c  (needed only if you use it)" }
 }
 Write-Host ''
-Write-Host 'Restart Claude Code / Codex, open your project folder, and run /hn-setup (Codex: $hn-setup).'
+if (Test-Path $gitBash) {
+  Write-Host 'Updating projects:'
+  & (Join-Path $HnHome 'harness\bin\hn.cmd') update-all
+  Write-Host ''
+}
+Write-Host 'Restart Claude Code / Codex. New project: open its folder and run /hn-setup (Codex: $hn-setup).'

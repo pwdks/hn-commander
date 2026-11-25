@@ -62,7 +62,7 @@ description: 현재 프로젝트에 하네스를 세팅한다 (CLAUDE.md·AGENTS
 - developer와 debugger가 둘 다 "배정 안 함"이면: "구현·수정 단계가 모두 건너뛰어집니다. 괜찮을까요?"라고 확인한다
 
 ## 4. 역할 배정 적용 (Q1이 예일 때)
-1. `hn init` → `.harness/`(스크립트, pipelines.conf), `docs/roles/`, `.gitignore`(`.harness/state/`) 준비
+1. `hn init` → `.harness/`(스크립트, pipelines.conf), `docs/roles/`, `.gitignore`(`.harness/state/`) 준비. 이 프로젝트가 업데이트 목록에 등록되어, 이후 설치 명령을 다시 실행하면 함께 업데이트된다
 2. 프리셋이면 `hn preset claude` 또는 `hn preset codex`, 직접 배정이면 역할마다 `hn role-set <역할> <claude|codex|none>`
 3. `hn section claude` 출력을 `CLAUDE.md` 끝에, `hn section codex` 출력을 `AGENTS.md` 끝에 붙인다 (`<!-- hn-commander:start -->` 구역이 이미 있으면 그 구역만 바꾼다)
 4. `hn hooks` → Claude Stop 훅(`.claude/settings.json`), Codex Stop 훅(`.codex/hooks.json`) 등록. "합치기 필요"가 나오면 기존 설정을 유지한 채 Stop 훅만 추가한다

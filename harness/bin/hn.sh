@@ -15,6 +15,8 @@
 #   wait                        사용자에게 묻기 전에 (훅이 재촉하지 않음)
 #   cancel | finish | status
 #   stop-hook                   Claude/Codex Stop 훅에서 호출
+#   update                      이 프로젝트를 설치된 최신 버전으로 (= init)
+#   update-all                  등록된 모든 프로젝트를 최신으로 (설치 스크립트가 호출)
 #   init | hooks | section <claude|codex>   /hn-setup에서 사용
 set -u
 
@@ -323,14 +325,82 @@ cmd_stop_hook() {
 }
 
 # ---------- 세팅 ----------
+# 설치 폴더의 최신 파일을 프로젝트에 맞춘다 (init·update 공통. 몇 번 실행해도 결과가 같다)
+#   .harness/bin/              항상 최신으로
+#   pipelines.conf, docs/roles 손대지 않은 파일만 최신으로, 직접 고친 파일은 그대로 두고 알림
+#   CLAUDE.md / AGENTS.md      hn-commander 구역(<!-- hn-commander:start/end -->)만 최신으로
+# '손대지 않음' = 예전에 hn-commander가 복사한 내용 그대로 (.harness/upstream.sums 또는 legacy.sums에 있는 값)
+SUMS="$H/upstream.sums"
+REGISTRY="$HN_HOME/projects.txt"
+sum_of() { tr -d '\r' < "$1" | cksum | cut -d' ' -f1-2; }
+is_pristine() { grep -qxF "$1 $2" "$SUMS" 2>/dev/null || grep -qxF "$1 $2" "$HN_HOME/harness/legacy.sums" 2>/dev/null; }
+
+sync_file() {  # <설치 폴더 기준 경로> <프로젝트 파일>
+  rel="$1"; src="$HN_HOME/$1"; dest="$2"; name="${dest#$ROOT/}"
+  new="$(sum_of "$src")"
+  if [ ! -f "$dest" ]; then cp "$src" "$dest"; echo "  추가     $name"
+  else
+    cur="$(sum_of "$dest")"
+    if [ "$cur" = "$new" ]; then :
+    elif is_pristine "$cur" "$rel"; then cp "$src" "$dest"; echo "  업데이트 $name"
+    else echo "  그대로   $name  (직접 고친 파일. 새 버전: $src)"; KEPT=$((KEPT + 1)); return
+    fi
+  fi
+  printf '%s %s\n' "$new" "$rel" >> "$SUMS"
+}
+
+sync_section() {  # <파일> <claude|codex>
+  f="$ROOT/$1"; grep -q '<!-- hn-commander:start -->' "$f" 2>/dev/null || return 0
+  sec="$STATE/.section.$$"; out="$STATE/.out.$$"
+  cmd_section "$2" > "$sec"
+  tr -d '\r' < "$f" | awk -v sec="$sec" '
+    /<!-- hn-commander:start -->/ { while ((getline l < sec) > 0) print l; skip = 1; next }
+    /<!-- hn-commander:end -->/   { if (skip) { skip = 0; next } }
+    !skip { print }' > "$out"
+  if [ "$(tr -cd '\r' < "$f" | wc -c)" -gt 0 ]; then sed 's/$/\r/' "$out" > "$out.crlf" && mv "$out.crlf" "$out"; fi  # 줄바꿈 방식 유지
+  if cmp -s "$f" "$out"; then rm -f "$out"; else mv "$out" "$f"; echo "  업데이트 $1 (hn-commander 구역)"; fi
+  rm -f "$sec"
+}
+
+register() {
+  p="$(cd "$ROOT" && pwd)"
+  grep -qxF "$p" "$REGISTRY" 2>/dev/null || printf '%s\n' "$p" >> "$REGISTRY"
+}
+
 cmd_init() {
   [ -d "$HN_HOME/harness" ] || die "설치 폴더가 없습니다: $HN_HOME (설치 스크립트를 먼저 실행)"
-  mkdir -p "$H/bin" "$ROOT/docs/roles"
+  ver="$(cat "$HN_HOME/VERSION")"; old="$(cat "$H/VERSION" 2>/dev/null)"
+  mkdir -p "$H/bin" "$STATE" "$ROOT/docs/roles"
+  KEPT=0
   cp "$HN_HOME/harness/bin/"* "$H/bin/"
-  [ -f "$PIPES_FILE" ] || cp "$HN_HOME/harness/pipelines.conf" "$PIPES_FILE"
-  for f in "$HN_HOME"/roles/*.md; do b="$(basename "$f")"; [ -f "$ROOT/docs/roles/$b" ] || cp "$f" "$ROOT/docs/roles/$b"; done
+  sync_file harness/pipelines.conf "$PIPES_FILE"
+  for f in "$HN_HOME"/roles/*.md; do b="$(basename "$f")"; sync_file "roles/$b" "$ROOT/docs/roles/$b"; done
+  sync_section CLAUDE.md claude
+  sync_section AGENTS.md codex
+  [ -f "$SUMS" ] && sort -u "$SUMS" -o "$SUMS"
   gi="$ROOT/.gitignore"; grep -qxF '.harness/state/' "$gi" 2>/dev/null || printf '.harness/state/\n' >> "$gi"
-  echo "복사 완료: .harness/bin, .harness/pipelines.conf, docs/roles/, .gitignore(.harness/state/)"
+  echo "$ver" > "$H/VERSION"
+  register
+  if [ -z "$old" ]; then echo "hn-commander $ver 적용: $(cd "$ROOT" && pwd)"
+  elif [ "$old" = "$ver" ]; then echo "hn-commander $ver (최신): $(cd "$ROOT" && pwd)"
+  else echo "hn-commander $old → $ver: $(cd "$ROOT" && pwd)"; fi
+  [ "$KEPT" -gt 0 ] && echo "  직접 고친 파일 ${KEPT}개는 그대로 뒀습니다. 새 버전을 쓰려면 그 파일을 지우고 다시 업데이트하세요"
+  return 0
+}
+
+# 등록된 모든 프로젝트 + 지금 폴더의 프로젝트를 업데이트 (설치 스크립트가 끝에서 호출)
+cmd_update_all() {
+  list="$(mktemp)"
+  { cat "$REGISTRY" 2>/dev/null; [ -f "$H/bin/hn.sh" ] && (cd "$ROOT" && pwd); } | awk 'NF && !seen[$0]++' > "$list"
+  : > "$REGISTRY.tmp"; n=0
+  while IFS= read -r p; do
+    [ -f "$p/.harness/bin/hn.sh" ] || continue
+    printf '%s\n' "$p" >> "$REGISTRY.tmp"; n=$((n + 1))
+    (cd "$p" && bash "$HN_HOME/harness/bin/hn.sh" init) || echo "  실패: $p"
+  done < "$list"
+  mv "$REGISTRY.tmp" "$REGISTRY"; rm -f "$list"
+  [ "$n" -eq 0 ] && echo "업데이트할 프로젝트 없음 (세팅한 프로젝트 폴더에서 설치 명령을 실행하면 그 프로젝트도 함께 업데이트됩니다)"
+  return 0
 }
 
 cmd_hooks() {
@@ -371,8 +441,9 @@ case "$cmd" in
   status) cmd_status ;;
   finish) cmd_finish ;;
   stop-hook) cmd_stop_hook ;;
-  init) cmd_init ;;
+  init|update) cmd_init ;;
+  update-all) cmd_update_all ;;
   hooks) cmd_hooks ;;
   section) cmd_section "$@" ;;
-  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; [ -n "$cmd" ] && exit 1 ;;
+  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; [ -n "$cmd" ] && exit 1 ;;
 esac

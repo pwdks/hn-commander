@@ -49,29 +49,29 @@ curl -fsSL https://raw.githubusercontent.com/pwdks/hn-commander/main/install.sh 
 | 처음 세팅 | `/hn-setup` | `$hn-setup` |
 | 역할 배정 바꾸기 | `/hn-mod-role` | `$hn-mod-role` |
 
-### 🔄 업데이트 (두 단계)
+### 🔄 업데이트
 
-업데이트는 **내 컴퓨터**와 **이미 세팅한 프로젝트**를 따로 바꿔야 합니다. 1단계만 하면 프로젝트 안의 스크립트는 예전 버전 그대로입니다.
+**위의 설치 명령을 다시 실행하면 끝입니다.** 내 컴퓨터의 hn-commander와 함께, 세팅해 둔 프로젝트 전부가 최신 버전으로 바뀝니다. 그다음 Claude Code / Codex를 다시 켜세요.
 
-**1. 내 컴퓨터 (한 번)**: 위의 설치 명령을 다시 실행합니다. `~/.hn-commander/`가 최신 버전으로 바뀌고 `hn-commander 0.x.x installed`처럼 버전이 표시됩니다.
-
-**2. 이미 세팅한 프로젝트마다**: 그 프로젝트 폴더에서 아래 명령을 실행합니다. 프로젝트의 `.harness/bin/` 스크립트만 최신으로 바꿉니다.
-```powershell
-# Windows (PowerShell)
-& "$env:USERPROFILE\.hn-commander\harness\bin\hn.cmd" init
 ```
-```bash
-# macOS
-bash ~/.hn-commander/harness/bin/hn.sh init
+hn-commander 0.1.2 installed -> C:\Users\me\.hn-commander
+...
+Updating projects:
+  업데이트 docs/roles/03-tester.md
+hn-commander 0.1.1 → 0.1.2: /c/Users/me/dev/my-app
+hn-commander 0.1.2 (최신): /c/Users/me/dev/other-app
 ```
 
-| 업데이트로 바뀌는 것 | 그대로 두는 것 (직접 고친 내용 보존) |
+| 업데이트로 바뀌는 것 | 그대로 두는 것 |
 |---|---|
-| `.harness/bin/` 스크립트 | 역할 배정 `roles.conf`, 단계 `pipelines.conf`, 역할 지침 `docs/roles/`, `CLAUDE.md`·`AGENTS.md`, 훅 설정 |
+| `.harness/bin/` 스크립트 | 역할 배정 `roles.conf`, 훅 설정 |
+| 역할 지침 `docs/roles/`, 단계 `pipelines.conf` — **손대지 않은 파일만** | 위 파일 중 **직접 고친 파일** (`그대로`로 표시. 새 버전을 쓰려면 그 파일을 지우고 다시 업데이트) |
+| `CLAUDE.md`·`AGENTS.md`의 hn-commander 구역 (`<!-- hn-commander:start -->` ~ `end`) | 그 구역 밖의 내용 |
 
-- 역할 지침까지 새 버전으로 받고 싶으면 `docs/roles/`의 그 파일을 지운 뒤 2단계를 다시 실행하세요.
+- 프로젝트 목록은 `~/.hn-commander/projects.txt`에 저장됩니다. `/hn-setup`으로 세팅하면 자동으로 들어갑니다.
+- **0.1.1 이하에서 세팅한 프로젝트**는 목록에 없습니다. 이번 한 번만, 그 프로젝트 폴더에서 설치 명령을 실행하세요. 지금 폴더의 프로젝트도 함께 업데이트되고 목록에 들어갑니다.
+- 프로젝트 하나만 바꾸려면 그 폴더에서 `.harness\bin\hn.cmd update` (macOS: `bash .harness/bin/hn.sh update`).
 - 훅 설정은 바뀌지 않으므로 Codex 훅을 다시 신뢰할 필요는 없습니다.
-- `/hn-setup`을 다시 실행해도 스크립트가 바뀌지만, 역할 배정 질문부터 다시 답해야 합니다. 스크립트만 바꿀 때는 위 명령이 간단합니다.
 
 <details>
 <summary>🗑️ 삭제</summary>
@@ -219,6 +219,8 @@ my-project/
 │  ├─ roles.conf           역할 배정 — 바꾸는 곳은 여기 하나
 │  ├─ pipelines.conf       요청 종류별 단계
 │  ├─ bin/hn.sh, hn.cmd    진행·넘기기 스크립트
+│  ├─ VERSION              이 프로젝트에 적용된 hn-commander 버전
+│  ├─ upstream.sums        업데이트가 '손대지 않은 파일'을 알아보는 기록 (지우지 마세요)
 │  └─ state/               진행 상태·결과 (git 제외)
 ├─ .claude/settings.json   Claude Stop 훅
 └─ .codex/hooks.json       Codex Stop 훅
@@ -235,6 +237,7 @@ bash .harness/bin/hn.sh roles     # 지금 역할 배정
 bash .harness/bin/hn.sh status    # 진행 중인 작업과 단계 기록
 bash .harness/bin/hn.sh off       # 하네스 잠시 끄기 (on 으로 다시 켬)
 bash .harness/bin/hn.sh codex-sandbox full   # 위임받은 Codex 샌드박스 풀기 (auto 로 되돌림)
+bash .harness/bin/hn.sh update    # 이 프로젝트만 설치된 최신 버전으로 (보통은 설치 명령이 대신 함)
 ```
 Windows PowerShell에서는 `.harness\bin\hn.cmd roles` 처럼 씁니다.
 
@@ -262,7 +265,7 @@ Codex는 프로젝트 훅을 처음 한 번 신뢰(trust)해야 실행합니다.
 - **tester · reviewer 등 실행 권한이 없는 역할**은 원래 실행하지 않습니다. 테스트를 쓰고 돌릴 명령을 적어 주면, 진행 중인 에이전트가 직접 실행합니다. 따로 할 일은 없습니다.
 - **debugger · integrator · optimizer를 Codex에 맡겼고 빌드까지 시키고 싶다면** 샌드박스를 풀 수 있습니다: `/hn-mod-role` → "위임받은 Codex 샌드박스 풀기", 또는 `bash .harness/bin/hn.sh codex-sandbox full` (되돌리기: `auto`). 이때 Codex 쪽의 커밋·푸시·삭제는 지시문으로만 막습니다.
 
-이 동작은 0.1.1부터입니다. 이미 세팅한 프로젝트는 [🔄 업데이트](#-업데이트-두-단계)의 1·2단계를 모두 해야 적용됩니다.
+이 동작은 0.1.1부터입니다. 이미 세팅한 프로젝트는 [🔄 업데이트](#-업데이트)로 적용됩니다.
 </details>
 
 <details>

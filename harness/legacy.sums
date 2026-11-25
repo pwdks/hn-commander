@@ -1,0 +1,12 @@
+# hn-commander 0.1.2 이전 버전들이 프로젝트에 복사한 파일의 cksum (CR 제거 후). 이 값과 같으면 '손대지 않은 파일'로 보고 업데이트한다
+3935101862 432 harness/pipelines.conf
+1352083554 2593 roles/00-orchestrator.md
+1130377228 1800 roles/01-architect.md
+1607464500 1819 roles/02-developer.md
+1548190192 1953 roles/03-tester.md
+4180318873 1711 roles/03-tester.md
+358195012 1808 roles/04-reviewer.md
+4002849232 1879 roles/05-debugger.md
+3940108353 1775 roles/06-integrator.md
+3897458375 1791 roles/07-optimizer.md
+1548555814 1667 roles/08-documenter.md
