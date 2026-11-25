@@ -5,6 +5,7 @@
 #   role-set <역할> <claude|codex|none>
 #   preset <claude|codex>       메인/서브 프리셋 적용
 #   on | off                    하네스 켜기/끄기
+#   codex-sandbox <auto|full>   위임받은 Codex의 샌드박스 (auto: 역할 권한대로, full: 풀기)
 #   start <종류> "<요청 요약>"   작업 시작 (종류: .harness/pipelines.conf)
 #   next                        다음 단계와 담당
 #   done <역할> "<한 줄 결과>"   단계 완료
@@ -71,12 +72,27 @@ perm_of() {
   esac
 }
 
+codex_sandbox() { [ "$(kv_get "$ROLES_FILE" codex_sandbox)" = full ] && echo full || echo auto; }
+
+cmd_codex_sandbox() {
+  need_roles
+  case "${1:-}" in
+    auto) kv_set "$ROLES_FILE" codex_sandbox auto
+          echo "위임받은 Codex 샌드박스: 역할 권한대로 (읽기 전용 → read-only, 그 밖 → workspace-write)" ;;
+    full) kv_set "$ROLES_FILE" codex_sandbox full
+          echo "위임받은 Codex 샌드박스: 풀림 (danger-full-access)"
+          echo "주의: Codex 쪽에는 커밋·푸시·삭제를 막는 장치가 없고 지시문으로만 막습니다. 'codex-sandbox auto'로 되돌림" ;;
+    *) die "사용: codex-sandbox <auto|full>  (지금: $(codex_sandbox))" ;;
+  esac
+}
+
 need_roles() { [ -f "$ROLES_FILE" ] || die "역할 배정이 없습니다. /hn-setup 또는 /hn-mod-role로 먼저 배정하세요"; }
 
 # ---------- 역할 배정 ----------
 cmd_roles() {
   need_roles
   if enabled; then echo "하네스: 켜짐"; else echo "하네스: 꺼짐"; fi
+  if [ "$(codex_sandbox)" = full ]; then echo "위임받은 Codex 샌드박스: 풀림 (full)"; else echo "위임받은 Codex 샌드박스: 역할 권한대로 (auto)"; fi
   echo "| 역할 | 담당 | 하는 일 |"
   echo "|---|---|---|"
   for r in $ROLES; do
@@ -244,6 +260,9 @@ cmd_delegate() {
     echo "- 맡은 역할만 하고 끝낸다. 다른 에이전트를 부르거나 .harness/bin/hn.sh 를 실행하지 않는다"
     echo "- 커밋·푸시하지 않는다. 실행하지 않은 명령의 결과를 지어내지 않는다"
     echo "- 변경 내용은 git status / git diff 로 확인한다"
+    if [ "$perm" != edit+exec ]; then
+      echo "- 빌드·테스트·앱 실행은 하지 않는다(이 역할 권한 밖). 확인에 필요한 명령은 결과에 '돌릴 명령: <명령> (실행 안 함)'으로 적는다. 실행은 진행 중인 에이전트가 한다"
+    fi
     [ "$role" = reviewer ] && echo "- 첫 줄에 반드시 '결과: 문제 없음' 또는 '결과: 문제 있음' 중 하나를 쓴다"
     echo "- 마지막 답은 역할 파일의 출력 형식대로 짧게 쓴다"
     echo "</hn-delegated>"
@@ -253,7 +272,8 @@ cmd_delegate() {
   case "$agent" in
     codex)
       command -v codex >/dev/null 2>&1 || die "codex CLI를 찾을 수 없습니다"
-      case "$perm" in read-only) sb=read-only ;; *) sb=workspace-write ;; esac
+      if [ "$(codex_sandbox)" = full ]; then sb=danger-full-access
+      else case "$perm" in read-only) sb=read-only ;; *) sb=workspace-write ;; esac; fi
       HN_DELEGATED=1 codex exec -s "$sb" --skip-git-repo-check -C "$ROOT" -o "$out" - \
         < "$STATE/results/.prompt.txt" > "$errlog" 2>&1
       rc=$? ;;
@@ -279,6 +299,7 @@ cmd_delegate() {
   fi
   echo "[$role] $agent 결과 (${out#$ROOT/}):"
   head -c "$RESULT_INLINE" "$out"; echo
+  [ "$perm" != edit+exec ] && echo "→ 넘겨받은 쪽은 빌드·테스트를 실행하지 않습니다. 결과의 '돌릴 명령'이 있으면 직접 실행해 확인하고 그 결과로 done 하세요"
   echo "→ 결과를 확인하고 'hn.sh done $role \"<한 줄 결과>\"'"
   [ "$role" = reviewer ] && grep -q '결과: *문제 있음' "$out" && echo "→ 문제 있음: done 대신 'hn.sh fix-round' (고치기 + 재검토)"
   return 0
@@ -336,6 +357,7 @@ case "$cmd" in
   roles) cmd_roles ;;
   role-set) cmd_role_set "$@" ;;
   preset) cmd_preset "$@" ;;
+  codex-sandbox) cmd_codex_sandbox "$@" ;;
   on)  need_roles; kv_set "$ROLES_FILE" enabled 1; echo "하네스 켜짐" ;;
   off) need_roles; kv_set "$ROLES_FILE" enabled 0; echo "하네스 꺼짐 (배정은 남아 있음. 'on'으로 다시 켬)" ;;
   start) cmd_start "$@" ;;
