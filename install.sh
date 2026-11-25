@@ -27,7 +27,10 @@ curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar -
 src="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 [ -f "$src/harness/bin/hn.sh" ] || { say "error: unexpected archive layout"; exit 1; }
 
+projects=""   # projects set up with hn-commander (kept across updates)
+[ -f "$HN_HOME/projects.txt" ] && projects="$(cat "$HN_HOME/projects.txt")"
 rm -rf "$HN_HOME"; mkdir -p "$(dirname "$HN_HOME")"; mv "$src" "$HN_HOME"
+[ -n "$projects" ] && printf '%s\n' "$projects" > "$HN_HOME/projects.txt"
 chmod +x "$HN_HOME/harness/bin/hn.sh"
 
 for d in $SKILL_DIRS; do
@@ -43,4 +46,7 @@ for c in claude codex git; do
   if command -v "$c" >/dev/null 2>&1; then say "  [ok]      $c"; else say "  [missing] $c  (needed only if you use it)"; fi
 done
 say ""
-say "Restart Claude Code / Codex, open your project folder, and run /hn-setup (Codex: \$hn-setup)."
+say "Updating projects:"
+bash "$HN_HOME/harness/bin/hn.sh" update-all || true
+say ""
+say "Restart Claude Code / Codex. New project: open its folder and run /hn-setup (Codex: \$hn-setup)."
