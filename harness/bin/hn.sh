@@ -579,6 +579,10 @@ cmd_section() {
   sed "s/{{ME}}/$me/g" "$HN_HOME/harness/agent-section.md"
 }
 
+# 아래 전체를 { …; exit; } 한 덩어리로 둔다: bash는 스크립트를 실행하면서 조금씩 읽으므로,
+# delegate가 몇 분 도는 사이 업데이트로 이 파일이 바뀌면 끝난 뒤 바뀐 파일의 엉뚱한 위치를 읽어 문법 오류가 난다.
+# 한 덩어리는 실행 전에 다 읽고, 끝에서 exit 하므로 그 뒤를 더 읽지 않는다.
+{
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   roles) cmd_roles ;;
@@ -607,3 +611,5 @@ case "$cmd" in
   section) cmd_section "$@" ;;
   *) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; [ -n "$cmd" ] && exit 1 ;;
 esac
+exit
+}
