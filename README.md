@@ -133,7 +133,7 @@ Tester — 바뀐 동작을 확인하는 테스트를 추가합니다.
 
 끝나면 평소처럼 요청하면 됩니다. 새 탭(세션)을 열 때마다 따로 할 일은 없습니다.
 
-**언어 설정**은 컴퓨터의 표시 언어(Windows 표시 언어, macOS 시스템 언어)를 감지해 1번에 보여 줍니다. 위치 정보는 쓰지 않습니다. 고른 언어는 Claude Code(`~/.claude/settings.json`의 `"language"`)와 Codex(`~/.codex/AGENTS.md`의 hn-commander 구역)에 저장되어 **모든 프로젝트**에 적용됩니다. 다시 바꾸려면 `/hn-setup`을 다시 하거나 `bash .harness/bin/hn.sh lang en` (Windows: `.harness\bin\hn.cmd lang en`).
+**언어 설정**은 컴퓨터의 표시 언어(Windows 표시 언어, macOS 시스템 언어)를 감지해 1번에 보여 주고, 질문도 그 언어로 나옵니다(일본어 컴퓨터: `言語設定 1) 日本語(検出) 2) 英語`). 지원: 한국어·일본어·중국어·스페인어·프랑스어·독일어·포르투갈어·영어. 그 밖의 언어는 영어로 묻습니다. 위치 정보는 쓰지 않습니다. 고른 언어는 Claude Code(`~/.claude/settings.json`의 `"language"`)와 Codex(`~/.codex/AGENTS.md`의 hn-commander 구역)에 저장되어 **모든 프로젝트**에 적용됩니다. 다시 바꾸려면 `/hn-setup`을 다시 하거나 `bash .harness/bin/hn.sh lang en` (Windows: `.harness\bin\hn.cmd lang en`).
 
 ---
 

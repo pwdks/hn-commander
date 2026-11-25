@@ -422,28 +422,38 @@ cmd_hooks() {
 #   Claude Code: ~/.claude/settings.json 의 "language"
 #   Codex      : ~/.codex/AGENTS.md 의 hn-commander:lang 구역 (Codex에는 언어 설정이 없음)
 lang_info() {  # <코드> → "<코드> <Claude 값> <영어 이름> <한국어 이름>"
+  # 코드|Claude 값|영어 이름|그 언어로 쓴 이름|질문 제목|1번 선택지|2번 선택지|2번 코드  (질문은 감지된 언어로 쓴다)
   case "$1" in
-    ko) echo "ko korean Korean 한국어" ;;      ja) echo "ja japanese Japanese 일본어" ;;
-    zh) echo "zh chinese Chinese 중국어" ;;     es) echo "es spanish Spanish 스페인어" ;;
-    fr) echo "fr french French 프랑스어" ;;     de) echo "de german German 독일어" ;;
-    pt) echo "pt portuguese Portuguese 포르투갈어" ;;
-    *)  echo "en english English 영어" ;;
+    ko) echo "ko|korean|Korean|한국어|언어 설정|한국어(감지됨)|영어|en" ;;
+    ja) echo "ja|japanese|Japanese|日本語|言語設定|日本語(検出)|英語|en" ;;
+    zh) echo "zh|chinese|Chinese|中文|语言设置|中文(已检测)|英语|en" ;;
+    es) echo "es|spanish|Spanish|Español|Idioma|Español (detectado)|Inglés|en" ;;
+    fr) echo "fr|french|French|Français|Langue|Français (détecté)|Anglais|en" ;;
+    de) echo "de|german|German|Deutsch|Sprache|Deutsch (erkannt)|Englisch|en" ;;
+    pt) echo "pt|portuguese|Portuguese|Português|Idioma|Português (detectado)|Inglês|en" ;;
+    *)  echo "en|english|English|English|Language|English (detected)|한국어 (Korean)|ko" ;;
   esac
 }
 
-cmd_lang_detect() {  # 컴퓨터의 표시 언어 (위치가 아니라 OS 언어 설정 기준)
+cmd_lang_detect() {  # 컴퓨터의 표시 언어 (위치가 아니라 OS 언어 설정 기준) → 질문에 그대로 쓸 문구
   l=""
   if command -v powershell.exe >/dev/null 2>&1; then l="$(powershell.exe -NoProfile -Command '(Get-UICulture).Name' 2>/dev/null | tr -d '\r')"
   elif command -v defaults >/dev/null 2>&1; then l="$(defaults read -g AppleLanguages 2>/dev/null | sed -n 's/^[[:space:]]*"\{0,1\}\([A-Za-z-]*\).*/\1/p' | grep . | head -1)"
   fi
   [ -n "$l" ] || l="${LC_ALL:-${LANG:-en}}"
-  lang_info "$(printf '%s' "$l" | cut -c1-2 | tr 'A-Z' 'a-z')"
+  d="$(printf '%s' "$l" | cut -c1-2 | tr 'A-Z' 'a-z')"
+  IFS='|' read -r code _ _ _ title opt1 opt2 code2 <<EOF
+$(lang_info "$d")
+EOF
+  [ "$code" = "$d" ] || opt1="English"   # 지원하지 않는 언어: 영어로 묻되 '감지됨'은 붙이지 않음
+  printf 'question=%s\n1=%s → hn lang %s\n2=%s → hn lang %s\n' "$title" "$opt1" "$code" "$opt2" "$code2"
 }
 
 cmd_lang() {
   case "${1:-}" in ko|en|ja|zh|es|fr|de|pt) ;; *) die "사용: lang <ko|en|ja|zh|es|fr|de|pt>" ;; esac
-  set -- $(lang_info "$1")
-  val="$2"; eng="$3"; kor="$4"
+  IFS='|' read -r _ val eng kor _ <<EOF
+$(lang_info "$1")
+EOF
   # Claude Code: "language" 한 줄만 넣거나 바꾼다 (다른 설정은 그대로)
   c="$HOME/.claude/settings.json"; t="$c.tmp.$$"; mkdir -p "$HOME/.claude"
   if [ ! -s "$c" ] || [ "$(tr -d ' \t\r\n' < "$c")" = "{}" ]; then printf '{\n  "language": "%s"\n}\n' "$val" > "$c"
